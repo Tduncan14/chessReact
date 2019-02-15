@@ -1,13 +1,17 @@
 import React from 'react';
 import { Grid, List, Comment, Form, Input } from 'semantic-ui-react';
+
+
 export default class Chat extends React.Component {
     constructor(props) {
         super(props);
+
         this.state = {
             users: props.room.users,
             messages: [],
             newMessage: ''
         };
+
         props.user.subscribeToRoom({
             roomId: props.room.id,
             messageLimit: 100,
@@ -24,10 +28,18 @@ export default class Chat extends React.Component {
                 },
                 onNewMessage: (message) => {
                     const messages = this.state.messages;
+                    let opponent;
+                    if (message.attachment && message.attachment.link && message.attachment.link.startsWith('urn:player:')) {
+                        opponent = message.attachment.link.substring(11);
+                        if (opponent !== props.user.id) {
+                            opponent = undefined;
+                        }
+                    }
                     messages.push({
                         id: message.id,
                         user: message.senderId,
-                        message: message.text
+                        message: message.text,
+                        opponent: opponent
                     });
                     this.setState({
                         messages: messages
@@ -36,27 +48,42 @@ export default class Chat extends React.Component {
             }
         })
     }
+
     render() {
         const users = this.state.users
             .filter((user) => user.id !== this.props.user.id)
             .map((user) => (
                 <List.Item key={user.id}>
+                    <List.Content floated='right'>
+                        <a onClick={() => this._challengePlayer(user)}>Challenge</a>
+                    </List.Content>
                     <List.Content>
                         { user.name }
                     </List.Content>
                 </List.Item>
             ));
+
         const messages = this.state.messages
             .map((message) => {
+                let acceptGame;
+                if (message.opponent) {
+                    acceptGame = (
+                        <Comment.Actions>
+                            <Comment.Action onClick={() => this._acceptChallenge(message.user)}>Accept Challenge</Comment.Action>
+                        </Comment.Actions>
+                    );
+                }
                 return (
                     <Comment key={message.id}>
                         <Comment.Content>
                             <Comment.Author>{ message.user }</Comment.Author>
                             <Comment.Text>{ message.message }</Comment.Text>
+                            { acceptGame }
                         </Comment.Content>
                     </Comment>
-                );        
+                );
             });
+
         return (
             <Grid>
                 <Grid.Row>
@@ -92,20 +119,25 @@ export default class Chat extends React.Component {
             </Grid>
         );
     }
+
     componentDidMount() {
         this._scrollToBottom();
     }
+
     componentDidUpdate() {
         this._scrollToBottom();
     }
+
     _scrollToBottom() {
         this.messagesEnd.scrollIntoView({ behavior: "smooth" });
     }
+
     _handleNewMessageChange(e) {
         this.setState({
             newMessage: e.target.value
         });
     }
+
     _handleSubmit() {
         const { newMessage } = this.state;
         const { user, room } = this.props;
@@ -115,6 +147,29 @@ export default class Chat extends React.Component {
         });
         this.setState({
             newMessage: ''
+        });
+    }
+
+    _challengePlayer(player) {
+        const { user, room } = this.props;
+        user.sendMessage({
+            text: `I challenge ${player.name} to a game`,
+            roomId: room.id,
+            attachment: {
+                link: `urn:player:${player.id}`,
+                type: 'file',
+                fetchRequired: false
+            }
+        });
+    }
+
+    _acceptChallenge(player) {
+        const { user } = this.props;
+        user.createRoom({
+            name: `${user.id} vs ${player}`,
+            addUserIds: [player]
+        }).then((room) => {
+            this.props.startedGame(room.id, user.id, player);
         });
     }
 }
